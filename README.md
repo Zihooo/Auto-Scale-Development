@@ -6,14 +6,14 @@ A Python package for automated scale development and analysis.
 
 ## Installation
 
-### Install package
-```bash
-pip install auto-scale-development
-```
-
 ### Install from GitHub
 ```bash
-pip install git+https://github.com/your-username/Auto-Scale-Development.git
+pip install git+https://github.com/Zihooo/Auto-Scale-Development.git
+```
+
+### Install from PyPI (currently not submit to PyPI yet)
+```bash
+pip install auto_scale_development
 ```
 
 ### Set API_KE configuration (.env file)
