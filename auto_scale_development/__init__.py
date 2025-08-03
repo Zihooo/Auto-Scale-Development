@@ -14,7 +14,10 @@ from .core_functions import (
     content_validation,
     export_items_to_excel, 
     export_items_to_json,
-    get_items
+    get_items,
+    statement_pair,
+    fine_tune,
+    EFA_item_selection
 )
 # Note: Helper functions are internal and not exposed in __all__
 # They are used internally by core functions
@@ -28,5 +31,8 @@ __all__ = [
     "content_validation",
     "export_items_to_excel", 
     "export_items_to_json",
-    "get_items"
+    "get_items",
+    "statement_pair",
+    "fine_tune",
+    "EFA_item_selection"
 ] 

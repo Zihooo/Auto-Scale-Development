@@ -1,0 +1,7 @@
+include README.md
+include requirements.txt
+include LICENSE
+recursive-include auto_scale_development *.py
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .git*

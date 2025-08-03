@@ -1016,3 +1016,1038 @@ def get_items(items_dict: Dict[str, Any]) -> Dict[str, Any]:
         raise Exception(f"Failed to extract items: {str(e)}")
 
 
+def statement_pair(
+    items_input: Union[Dict[str, Any], str],
+    output_file: Optional[str] = None,
+    balance_data: bool = True,
+    random_seed: Optional[int] = 42) -> Dict[str, Any]:
+    """
+    Create pairwise combinations of all items with labels for similarity analysis or machine learning.
+    
+    Args:
+        items_input (Union[Dict[str, Any], str]): Input data. Can be:
+            - Dictionary containing items data from item_generation, item_reduction, or content_validation, OR
+            - Path to Excel file (.xlsx), OR  
+            - Path to JSON file (.json)
+        output_file (Optional[str]): Path to output Excel file. If None, no file will be created. Defaults to None
+        balance_data (bool): Whether to balance the dataset by sampling label=0 pairs to match label=1 count. Defaults to True
+        random_seed (Optional[int]): Random seed for reproducible sampling. Defaults to 42
+    
+    Returns:
+        Dict[str, Any]: Dictionary containing paired items data with format:
+            {
+                "pairs": [
+                    {
+                        "pair_id": i,
+                        "statement1": statement1,
+                        "statement2": statement2, 
+                        "label1": dimension1,
+                        "label2": dimension2,
+                        "combined_label": "dimension1_dimension2",
+                        "label": 1 if same dimension else 0
+                    },
+                    ...
+                ],
+                "metadata": {...}
+            }
+    
+    Raises:
+        ValueError: If items_input is empty or invalid
+        Exception: If pairing process fails
+    
+    Example:
+        >>> # Using dictionary from item_generation
+        >>> items_dict = item_generation(...)
+        >>> pairs_dict = statement_pair(items_dict, "item_pairs.xlsx")
+        
+        >>> # Using filtered items
+        >>> filtered_dict = item_reduction(...)
+        >>> pairs_dict = statement_pair(filtered_dict, balance_data=True)
+        
+        >>> # Using validated items
+        >>> validated_dict = content_validation(...)
+        >>> pairs_dict = statement_pair(validated_dict, "validated_pairs.xlsx")
+        
+        >>> print(f"Generated {len(pairs_dict['pairs'])} pairs")
+        >>> print(f"Same dimension pairs: {pairs_dict['metadata']['same_dimension_pairs']}")
+        >>> print(f"Different dimension pairs: {pairs_dict['metadata']['different_dimension_pairs']}")
+    """
+    # Handle different input types
+    if isinstance(items_input, str):
+        # Input is a file path
+        if items_input.lower().endswith('.xlsx'):
+            items_dict = _load_items_from_excel(items_input)
+        elif items_input.lower().endswith('.json'):
+            items_dict = _load_items_from_json(items_input)
+        else:
+            raise ValueError("File must be .xlsx or .json format")
+    elif isinstance(items_input, dict):
+        # Input is a dictionary
+        items_dict = items_input
+    else:
+        raise ValueError("items_input must be a dictionary or file path string")
+    
+    if not items_dict or not isinstance(items_dict, dict):
+        raise ValueError("items_dict must be a non-empty dictionary")
+    
+    try:
+        # Extract items from dictionary using get_items function for consistency
+        items_only = get_items(items_dict)
+        items = items_only["items"]
+        
+        if not items:
+            raise ValueError("No items found in the dictionary")
+        
+        if len(items) < 2:
+            raise ValueError("At least 2 items are required to create pairs")
+        
+        # Set random seed for reproducibility
+        if random_seed is not None:
+            import random
+            import numpy as np
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+        
+        # Create all possible pairs
+        pairs = []
+        pair_id = 1
+        
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):  # Avoid duplicate pairs and self-pairs
+                item1 = items[i]
+                item2 = items[j]
+                
+                statement1 = item1.get("statement", "")
+                statement2 = item2.get("statement", "")
+                label1 = item1.get("dimension", "")
+                label2 = item2.get("dimension", "")
+                
+                # Skip if any required field is missing
+                if not statement1 or not statement2 or not label1 or not label2:
+                    continue
+                
+                # Create combined label
+                combined_label = f"{label1}_{label2}"
+                
+                # Determine if same dimension (label = 1) or different (label = 0)
+                label = 1 if label1 == label2 else 0
+                
+                pair_data = {
+                    "pair_id": pair_id,
+                    "statement1": statement1,
+                    "statement2": statement2,
+                    "label1": label1,
+                    "label2": label2,
+                    "combined_label": combined_label,
+                    "label": label
+                }
+                
+                pairs.append(pair_data)
+                pair_id += 1
+        
+        if not pairs:
+            raise ValueError("No valid pairs could be created from the items")
+        
+        # Separate same and different dimension pairs
+        same_dimension_pairs = [pair for pair in pairs if pair["label"] == 1]
+        different_dimension_pairs = [pair for pair in pairs if pair["label"] == 0]
+        
+        print(f"Created {len(same_dimension_pairs)} same-dimension pairs")
+        print(f"Created {len(different_dimension_pairs)} different-dimension pairs")
+        
+        # Balance data if requested
+        final_pairs = pairs.copy()
+        
+        if balance_data and len(different_dimension_pairs) > len(same_dimension_pairs):
+            # Sample from different dimension pairs to match same dimension pairs count
+            import random
+            sampled_different_pairs = random.sample(different_dimension_pairs, len(same_dimension_pairs))
+            final_pairs = same_dimension_pairs + sampled_different_pairs
+            
+            # Shuffle the final pairs
+            random.shuffle(final_pairs)
+            
+            print(f"Balanced dataset: {len(same_dimension_pairs)} pairs per class")
+            print(f"Final dataset size: {len(final_pairs)} pairs")
+        
+        # Create output dictionary
+        pairs_dict = {
+            "pairs": final_pairs,
+            "metadata": {
+                "total_pairs": len(final_pairs),
+                "original_total_pairs": len(pairs),
+                "same_dimension_pairs": len([p for p in final_pairs if p["label"] == 1]),
+                "different_dimension_pairs": len([p for p in final_pairs if p["label"] == 0]),
+                "original_items_count": len(items),
+                "dimensions_list": list(set(item["dimension"] for item in items if item.get("dimension"))),
+                "balance_data": balance_data,
+                "random_seed": random_seed,
+                "generated_from": "auto_scale_development package"
+            }
+        }
+        
+        # Preserve original keys if they exist
+        for key in ["construct", "definition", "dimensions", "examples"]:
+            if key in items_dict:
+                pairs_dict[key] = items_dict[key]
+        
+        # Export to Excel if output_file is specified
+        if output_file:
+            export_path = export_pairs_to_excel(pairs_dict, output_file)
+            pairs_dict["metadata"]["exported_to"] = export_path
+            print(f"Pairs exported to: {export_path}")
+        
+        return pairs_dict
+        
+    except Exception as e:
+        raise Exception(f"Failed to create statement pairs: {str(e)}")
+
+
+def export_pairs_to_excel(
+    pairs_dict: Dict[str, Any],
+    output_file: str,
+    sheet_name: str = "Statement_Pairs") -> str:
+    """
+    Export statement pairs to an Excel file.
+    
+    Args:
+        pairs_dict (Dict[str, Any]): Dictionary containing pairs data from statement_pair function
+        output_file (str): Path to the output Excel file
+        sheet_name (str): Name of the main worksheet. Defaults to "Statement_Pairs"
+    
+    Returns:
+        str: Path to the created Excel file
+    
+    Raises:
+        ValueError: If pairs_dict is empty or invalid
+        Exception: If Excel file creation fails
+    
+    Example:
+        >>> pairs_dict = statement_pair(...)
+        >>> excel_path = export_pairs_to_excel(pairs_dict, "statement_pairs.xlsx")
+    """
+    if not pairs_dict or not isinstance(pairs_dict, dict):
+        raise ValueError("pairs_dict must be a non-empty dictionary")
+    
+    if "pairs" not in pairs_dict:
+        raise ValueError("pairs_dict must contain 'pairs' key")
+    
+    try:
+        pairs = pairs_dict["pairs"]
+        
+        if not pairs:
+            raise ValueError("No pairs found in the dictionary")
+        
+        # Create Excel writer
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            
+            # Main pairs sheet
+            df_data = []
+            for pair in pairs:
+                row_data = {
+                    'Pair_ID': pair.get("pair_id", ""),
+                    'Statement1': pair.get("statement1", ""),
+                    'Statement2': pair.get("statement2", ""),
+                    'Label1': pair.get("label1", ""),
+                    'Label2': pair.get("label2", ""),
+                    'Combined_Label': pair.get("combined_label", ""),
+                    'Label': pair.get("label", "")
+                }
+                df_data.append(row_data)
+            
+            df = pd.DataFrame(df_data)
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Auto-adjust column widths for main sheet
+            worksheet = writer.sheets[sheet_name]
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 80)  # Allow longer text for statements
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Metadata sheet
+            if "metadata" in pairs_dict:
+                metadata = pairs_dict["metadata"]
+                metadata_data = []
+                for key, value in metadata.items():
+                    if isinstance(value, (list, dict)):
+                        metadata_data.append({'Key': key, 'Value': str(value)})
+                    else:
+                        metadata_data.append({'Key': key, 'Value': value})
+                
+                if metadata_data:
+                    metadata_df = pd.DataFrame(metadata_data)
+                    metadata_df.to_excel(writer, sheet_name="Metadata", index=False)
+                    
+                    # Auto-adjust column widths for metadata sheet
+                    metadata_worksheet = writer.sheets["Metadata"]
+                    for column in metadata_worksheet.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = min(max_length + 2, 50)
+                        metadata_worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Construct information sheet
+            construct_data = []
+            if "construct" in pairs_dict:
+                construct_data.append({'Field': 'Construct', 'Value': pairs_dict["construct"]})
+            if "definition" in pairs_dict:
+                construct_data.append({'Field': 'Definition', 'Value': pairs_dict["definition"]})
+            if "dimensions" in pairs_dict:
+                dimensions = pairs_dict["dimensions"]
+                for dim, desc in dimensions.items():
+                    construct_data.append({'Field': f'Dimension_{dim}', 'Value': desc})
+            if "examples" in pairs_dict:
+                examples = pairs_dict["examples"]
+                for dim, example_list in examples.items():
+                    construct_data.append({'Field': f'Examples_{dim}', 'Value': '; '.join(example_list)})
+            
+            if construct_data:
+                construct_df = pd.DataFrame(construct_data)
+                construct_df.to_excel(writer, sheet_name="Construct_Info", index=False)
+                
+                # Auto-adjust column widths for construct info sheet
+                construct_worksheet = writer.sheets["Construct_Info"]
+                for column in construct_worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 80)  # Allow longer text for descriptions
+                    construct_worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        return output_file
+        
+    except Exception as e:
+        raise Exception(f"Failed to create Excel file: {str(e)}")
+
+
+def fine_tune(
+    pairs_input: Union[Dict[str, Any], str],
+    model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    output_path: str = "./fine_tuned_model",
+    train_test_split: float = 0.8,
+    num_train_epochs: int = 5,
+    learning_rate: float = 1e-5,
+    per_device_train_batch_size: int = 32,
+    per_device_eval_batch_size: int = 32,
+    warmup_steps: int = 100,
+    loss_function: str = "MultipleNegativesRankingLoss",
+    evaluation_steps: int = 100,
+    save_steps: int = 500,
+    random_seed: Optional[int] = 42) -> SentenceTransformer:
+    """
+    Fine-tune a sentence transformer model using statement pairs data.
+    
+    Args:
+        pairs_input (Union[Dict[str, Any], str]): Input data. Can be:
+            - Dictionary containing pairs data from statement_pair function, OR
+            - Path to Excel file (.xlsx) created by statement_pair function
+        model_name (str): Name or path of the sentence transformer model to fine-tune. Defaults to "sentence-transformers/all-MiniLM-L6-v2"
+        output_path (str): Path to save the fine-tuned model. Defaults to "./fine_tuned_model"
+        train_test_split (float): Ratio for train/test split (0.0 to 1.0). Defaults to 0.8
+        num_train_epochs (int): Number of training epochs. Defaults to 5
+        learning_rate (float): Learning rate for training. Defaults to 1e-5
+        per_device_train_batch_size (int): Training batch size. Defaults to 32
+        per_device_eval_batch_size (int): Evaluation batch size. Defaults to 32
+        warmup_steps (int): Number of warmup steps. Defaults to 100
+        loss_function (str): Loss function to use. Options: "MultipleNegativesRankingLoss", "CosineSimilarityLoss". Defaults to "MultipleNegativesRankingLoss"
+        evaluation_steps (int): Steps between evaluations. Defaults to 100
+        save_steps (int): Steps between model saves. Defaults to 500
+        random_seed (Optional[int]): Random seed for reproducible training. Defaults to 42
+    
+    Returns:
+        SentenceTransformer: The fine-tuned model
+    
+    Raises:
+        ValueError: If pairs_input is empty or invalid
+        Exception: If training fails
+    
+    Example:
+        >>> # Using pairs dictionary from statement_pair
+        >>> pairs_dict = statement_pair(...)
+        >>> model = fine_tune(
+        ...     pairs_input=pairs_dict,
+        ...     model_name="sentence-transformers/all-MiniLM-L6-v2",
+        ...     output_path="./my_fine_tuned_model",
+        ...     num_train_epochs=10,
+        ...     learning_rate=2e-5,
+        ...     per_device_train_batch_size=16
+        ... )
+        
+        >>> # Using Excel file
+        >>> model = fine_tune(
+        ...     pairs_input="statement_pairs.xlsx",
+        ...     num_train_epochs=5,
+        ...     train_test_split=0.85
+        ... )
+        
+        >>> # Test the model
+        >>> similarity = model.similarity(["Statement 1"], ["Statement 2"])
+        >>> print(f"Similarity: {similarity}")
+    """
+    try:
+        # Import required libraries
+        from sentence_transformers import SentenceTransformer, InputExample, losses
+        from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
+        from torch.utils.data import DataLoader
+        import torch
+        import random
+        import numpy as np
+        
+        # Set random seeds for reproducibility
+        if random_seed is not None:
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+            torch.manual_seed(random_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(random_seed)
+        
+        # Handle different input types
+        if isinstance(pairs_input, str):
+            # Input is an Excel file path
+            if not pairs_input.lower().endswith('.xlsx'):
+                raise ValueError("File must be .xlsx format")
+            
+            # Load pairs from Excel file
+            df = pd.read_excel(pairs_input, sheet_name="Statement_Pairs")
+            
+            # Convert to pairs format
+            pairs_data = []
+            for _, row in df.iterrows():
+                pair_data = {
+                    "pair_id": row.get("Pair_ID", ""),
+                    "statement1": row.get("Statement1", ""),
+                    "statement2": row.get("Statement2", ""),
+                    "label1": row.get("Label1", ""),
+                    "label2": row.get("Label2", ""),
+                    "combined_label": row.get("Combined_Label", ""),
+                    "label": row.get("Label", "")
+                }
+                pairs_data.append(pair_data)
+            
+            pairs_dict = {"pairs": pairs_data}
+            
+        elif isinstance(pairs_input, dict):
+            # Input is a dictionary
+            pairs_dict = pairs_input
+        else:
+            raise ValueError("pairs_input must be a dictionary or Excel file path string")
+        
+        if not pairs_dict or not isinstance(pairs_dict, dict):
+            raise ValueError("pairs_dict must be a non-empty dictionary")
+        
+        if "pairs" not in pairs_dict:
+            raise ValueError("pairs_dict must contain 'pairs' key")
+        
+        pairs = pairs_dict["pairs"]
+        
+        if not pairs:
+            raise ValueError("No pairs found in the input data")
+        
+        print(f"Loaded {len(pairs)} pairs for training")
+        
+        # Convert all pairs to InputExample format first
+        all_examples = []
+        for pair in pairs:
+            if loss_function == "MultipleNegativesRankingLoss":
+                # For MNRL, we store the original label for testing but will filter for training
+                example = InputExample(
+                    texts=[pair["statement1"], pair["statement2"]],
+                    label=int(pair.get("label", 0))  # Keep original label (0 or 1)
+                )
+            elif loss_function == "CosineSimilarityLoss":
+                # For CosineSimilarityLoss, convert label to similarity score
+                similarity_score = float(pair.get("label", 0))
+                example = InputExample(
+                    texts=[pair["statement1"], pair["statement2"]], 
+                    label=similarity_score
+                )
+            else:
+                raise ValueError(f"Unsupported loss function: {loss_function}")
+            all_examples.append(example)
+        
+        # Split data into train and test sets FIRST (before filtering)
+        random.shuffle(all_examples)
+        split_idx = int(len(all_examples) * train_test_split)
+        train_data_all = all_examples[:split_idx]
+        test_data = all_examples[split_idx:]  # Keep all test data (label=0 and label=1)
+        
+        # Filter training data based on loss function
+        if loss_function == "MultipleNegativesRankingLoss":
+            # Use ALL positive pairs (label=1) from the entire dataset for training
+            train_data = [ex for ex in all_examples if ex.label == 1]
+            print(f"Training set: {len(train_data)} positive pairs (ALL label=1 from entire dataset)")
+            print(f"Test set: {len(test_data)} pairs (split subset for evaluation)")
+            
+            # Count test set composition
+            test_positive = sum(1 for ex in test_data if ex.label == 1)
+            test_negative = sum(1 for ex in test_data if ex.label == 0)
+            print(f"Test set composition: {test_positive} positive pairs, {test_negative} negative pairs")
+            
+        elif loss_function == "CosineSimilarityLoss":
+            # Use all training data
+            train_data = train_data_all
+            print(f"Training set: {len(train_data)} pairs")
+            print(f"Test set: {len(test_data)} pairs")
+        else:
+            train_data = train_data_all
+            print(f"Training set: {len(train_data)} examples")
+            print(f"Test set: {len(test_data)} examples")
+        
+        if len(train_data) == 0:
+            raise ValueError("Training set is empty. Please check your data and split ratio.")
+        
+        # Load the base model
+        print(f"Loading base model: {model_name}")
+        model = SentenceTransformer(model_name)
+        
+        # Create data loader
+        train_dataloader = DataLoader(train_data, shuffle=True, batch_size=per_device_train_batch_size)
+        
+        # Set up loss function
+        if loss_function == "MultipleNegativesRankingLoss":
+            train_loss = losses.MultipleNegativesRankingLoss(model=model)
+        elif loss_function == "CosineSimilarityLoss":
+            train_loss = losses.CosineSimilarityLoss(model=model)
+        
+        # Set up evaluator if we have test data
+        evaluator = None
+        if test_data and loss_function == "CosineSimilarityLoss":
+            # Only create evaluator for CosineSimilarityLoss
+            # MultipleNegativesRankingLoss doesn't need similarity score evaluation
+            sentences1 = [example.texts[0] for example in test_data]
+            sentences2 = [example.texts[1] for example in test_data]
+            scores = [example.label for example in test_data]
+            
+            evaluator = EmbeddingSimilarityEvaluator(
+                sentences1, sentences2, scores,
+                batch_size=per_device_eval_batch_size,
+                name="test_evaluator"
+            )
+        
+        # Calculate total steps for warmup
+        total_steps = len(train_dataloader) * num_train_epochs
+        warmup_steps = min(warmup_steps, int(total_steps * 0.1))  # Max 10% of total steps
+        
+        print(f"Starting training with {num_train_epochs} epochs...")
+        print(f"Total training steps: {total_steps}")
+        print(f"Warmup steps: {warmup_steps}")
+        print(f"Loss function: {loss_function}")
+        
+        # Train the model
+        # Prepare training arguments based on whether we have an evaluator
+        fit_kwargs = {
+            "train_objectives": [(train_dataloader, train_loss)],
+            "epochs": num_train_epochs,
+            "warmup_steps": warmup_steps,
+            "output_path": output_path,
+            "save_best_model": True,
+            "optimizer_params": {
+                'lr': learning_rate,
+            },
+            "scheduler": 'WarmupLinear',
+            "checkpoint_path": output_path,
+            "checkpoint_save_steps": save_steps,
+            "use_amp": True  # Use automatic mixed precision for faster training
+        }
+        
+        # Only add evaluation parameters if we have an evaluator
+        if evaluator is not None:
+            fit_kwargs["evaluator"] = evaluator
+            fit_kwargs["evaluation_steps"] = evaluation_steps
+        
+        model.fit(**fit_kwargs)
+        
+        print(f"Training completed! Model saved to: {output_path}")
+        
+        # Load the best model
+        fine_tuned_model = SentenceTransformer(output_path)
+        
+        # Evaluate the model on test data
+        if test_data:
+            print("\n" + "="*50)
+            print("EVALUATION ON TEST SET")
+            print("="*50)
+            
+            if loss_function == "MultipleNegativesRankingLoss":
+                # Calculate average similarities for both types
+                similarities = []
+                true_labels = []
+                
+                print("Calculating similarities for test pairs...")
+                for test_pair in test_data:
+                    embeddings = fine_tuned_model.encode([test_pair.texts[0], test_pair.texts[1]])
+                    similarity = np.dot(embeddings[0], embeddings[1]) / (np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1]))
+                    similarities.append(similarity)
+                    true_labels.append(test_pair.label)
+                
+                # Calculate averages for each label type
+                similarities_pos = [s for s, l in zip(similarities, true_labels) if l == 1]
+                similarities_neg = [s for s, l in zip(similarities, true_labels) if l == 0]
+                
+                print(f"\nRESULTS:")
+                if similarities_pos:
+                    avg_similarity_pos = np.mean(similarities_pos)
+                    print(f"Average similarity for same-dimension pairs (label=1): {avg_similarity_pos:.4f}")
+                
+                if similarities_neg:
+                    avg_similarity_neg = np.mean(similarities_neg)
+                    print(f"Average similarity for different-dimension pairs (label=0): {avg_similarity_neg:.4f}")
+                
+                if similarities_pos and similarities_neg:
+                    separation = avg_similarity_pos - avg_similarity_neg
+                    print(f"Separation: {separation:.4f}")
+                
+            else:
+                # For other loss functions, show sample result
+                sample_pair = test_data[0]
+                embeddings = fine_tuned_model.encode([sample_pair.texts[0], sample_pair.texts[1]])
+                similarity = np.dot(embeddings[0], embeddings[1]) / (np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1]))
+                print(f"Sample similarity score: {similarity:.4f}")
+                print(f"Original label: {sample_pair.label} ({'same dimension' if sample_pair.label == 1 else 'different dimensions'})")
+        
+        return fine_tuned_model
+        
+    except ImportError as e:
+        raise Exception(f"Required packages not installed. Please install: pip install sentence-transformers torch. Error: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Failed to fine-tune model: {str(e)}")
+
+
+
+def EFA_item_selection(
+    items_input: Union[Dict[str, Any], str],
+    model_path: str,
+    n_factors: int,
+    items_per_factor: int,
+    output_path: Optional[str] = None,
+    plot_title: str = "EFA Scree Plot",
+    rotation: str = "varimax",
+    random_seed: Optional[int] = 42) -> Dict[str, Any]:
+    """
+    Perform Exploratory Factor Analysis (EFA) using fine-tuned sentence transformer model
+    and select best items for each factor.
+    
+    Args:
+        items_input (Union[Dict[str, Any], str]): Input data. Can be:
+            - Dictionary with "items" key containing items list (from item_generation/item_reduction/content_validation functions), OR
+            - Dictionary in top_items format with dimension keys: {"dimension1": [items], "dimension2": [items], ...} (e.g., validated_items["top_items"]), OR
+            - Path to Excel file (.xlsx) with items data, OR  
+            - Path to JSON file (.json) with items data
+        model_path (str): Path to the fine-tuned sentence transformer model
+        n_factors (int): Number of factors to extract in EFA
+        items_per_factor (int): Number of items to select per factor
+        output_path (Optional[str]): Path to save the plot. If None, plot will be displayed. Defaults to None
+        plot_title (str): Title for the scree plot. Defaults to "EFA Scree Plot"
+        rotation (str): Factor rotation method. Options: "varimax", "promax", "oblimin", "none". Defaults to "varimax"
+        random_seed (Optional[int]): Random seed for reproducibility. Defaults to 42
+    
+    Returns:
+        Dict[str, Any]: Dictionary containing:
+            - "selected_items": List of selected items with highest factor loadings (top items_per_factor for each factor)
+            - "factor_loadings": Full factor loading matrix for all input items
+            - "explained_variance": Explained variance ratios for each factor
+            - "cumulative_variance": Cumulative explained variance
+            - "similarity_matrix": Cosine similarity matrix used for EFA
+            - "embeddings": Item embeddings from the fine-tuned model
+            - "eigenvalues": Eigenvalues from factor analysis
+            - "factor_loadings_file": Path to Excel file containing complete factor analysis results
+            - "plot_file": Path to scree plot image file (if output_path provided)
+    
+    Raises:
+        ValueError: If items_input is empty or invalid
+        FileNotFoundError: If model_path does not exist
+        Exception: If EFA analysis fails
+    
+    Example:
+        >>> # Using items dictionary from item_generation
+        >>> items_dict = item_generation(...)
+        >>> results = EFA_item_selection(
+        ...     items_input=items_dict,
+        ...     model_path="./fine_tuned_model",
+        ...     n_factors=3,
+        ...     items_per_factor=5
+        ... )
+        
+        >>> # Using top_items from content_validation (Recommended)
+        >>> validated_items = content_validation(...)
+        >>> results = EFA_item_selection(
+        ...     items_input=validated_items["top_items"],  # Direct use of top items
+        ...     model_path="./fine_tuned_model",
+        ...     n_factors=3,
+        ...     items_per_factor=5,
+        ...     rotation="varimax"  # Clear factor structure
+        ... )
+        
+        >>> # Using Excel file
+        >>> results = EFA_item_selection(
+        ...     items_input="items.xlsx",
+        ...     model_path="./fine_tuned_model", 
+        ...     n_factors=4,
+        ...     items_per_factor=6,
+        ...     output_path="./efa_plot.png"
+        ... )
+        
+        >>> # Access results
+        >>> selected_items = results["selected_items"]
+        >>> loadings = results["factor_loadings"]
+        >>> variance_explained = results["explained_variance"]
+    """
+    try:
+        # Import required libraries
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from sklearn.decomposition import FactorAnalysis
+        from sklearn.metrics.pairwise import cosine_similarity
+        from sentence_transformers import SentenceTransformer
+        import json
+        import os
+        
+        # Set random seed for reproducibility
+        if random_seed is not None:
+            np.random.seed(random_seed)
+        
+        # Check if model path exists
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model path does not exist: {model_path}")
+        
+        # Load the fine-tuned model
+        print(f"Loading fine-tuned model from: {model_path}")
+        model = SentenceTransformer(model_path)
+        
+        # Handle different input types
+        if isinstance(items_input, str):
+            # Input is a file path
+            if items_input.lower().endswith('.xlsx'):
+                # Load from Excel file
+                df = pd.read_excel(items_input)
+                items_data = []
+                for _, row in df.iterrows():
+                    item_data = {
+                        "item_number": row.get("Item_Number", row.get("item_number", "")),
+                        "statement": row.get("Statement", row.get("statement", "")),
+                        "dimension": row.get("Dimension", row.get("dimension", ""))
+                    }
+                    items_data.append(item_data)
+                items_dict = {"items": items_data}
+                
+            elif items_input.lower().endswith('.json'):
+                # Load from JSON file
+                with open(items_input, 'r', encoding='utf-8') as f:
+                    items_dict = json.load(f)
+            else:
+                raise ValueError("File must be .xlsx or .json format")
+                
+        elif isinstance(items_input, dict):
+            # Input is a dictionary
+            items_dict = items_input
+        else:
+            raise ValueError("items_input must be a dictionary or file path string")
+        
+        if not items_dict or not isinstance(items_dict, dict):
+            raise ValueError("items_dict must be a non-empty dictionary")
+        
+        # Handle different dictionary formats
+        if "items" in items_dict:
+            # Standard format: {"items": [list of items]}
+            items = items_dict["items"]
+        else:
+            # Check if it's top_items format: {"dimension1": [items], "dimension2": [items], ...}
+            # Look for lists of dictionaries with item structure
+            all_items = []
+            is_top_items_format = False
+            
+            for key, value in items_dict.items():
+                if isinstance(value, list) and value:
+                    # Check if first item looks like an item dictionary
+                    first_item = value[0]
+                    if isinstance(first_item, dict) and any(field in first_item for field in ["statement", "item_number"]):
+                        all_items.extend(value)
+                        is_top_items_format = True
+            
+            if is_top_items_format and all_items:
+                items = all_items
+                print(f"Detected top_items format with {len(items_dict)} dimensions")
+            else:
+                raise ValueError("items_dict must contain 'items' key or be in top_items format (dimension: [items])")
+        
+        if not items:
+            raise ValueError("No items found in the input data")
+        
+        print(f"Loaded {len(items)} items for EFA analysis")
+        
+        # Extract statements and metadata
+        statements = []
+        item_numbers = []
+        dimensions = []
+        
+        for item in items:
+            statement = item.get("statement", "")
+            if not statement.strip():
+                continue
+            statements.append(statement.strip())
+            item_numbers.append(item.get("item_number", ""))
+            dimensions.append(item.get("dimension", ""))
+        
+        if len(statements) == 0:
+            raise ValueError("No valid statements found in items")
+        
+        if len(statements) < n_factors:
+            raise ValueError(f"Number of items ({len(statements)}) must be >= number of factors ({n_factors})")
+        
+        print(f"Processing {len(statements)} valid statements")
+        
+        # Calculate embeddings using fine-tuned model
+        print("Calculating embeddings using fine-tuned model...")
+        embeddings = model.encode(statements, show_progress_bar=True)
+        print(f"Generated embeddings with shape: {embeddings.shape}")
+        
+        # Calculate cosine similarity matrix
+        print("Computing cosine similarity matrix...")
+        similarity_matrix = cosine_similarity(embeddings)
+        
+        # Convert similarity to correlation-like matrix for EFA
+        # EFA typically works better with correlation matrices
+        correlation_matrix = similarity_matrix
+        
+        # Perform EFA using factor_analyzer for better results
+        print(f"Performing EFA with {n_factors} factors...")
+        print(f"Using rotation: {rotation}")
+        
+        try:
+            from factor_analyzer import FactorAnalyzer
+        except ImportError:
+            raise ImportError("factor_analyzer package is required. Install with: pip install factor_analyzer")
+        
+        # Create FactorAnalyzer instance (same as your notebook)
+        rotation_method = None if rotation.lower() == "none" else rotation.lower()
+        fa = FactorAnalyzer(n_factors=n_factors, 
+                           is_corr_matrix=True, 
+                           rotation=rotation_method)
+        
+        # Fit the model
+        fa.fit(correlation_matrix)
+        
+        # Get factor loadings
+        factor_loadings = fa.loadings_  # Shape: (n_items, n_factors)
+        
+        # Calculate explained variance using factor_analyzer's method
+        variance_info = fa.get_factor_variance()
+        explained_variance = variance_info[1]  # proportional variance 
+        cumulative_variance = variance_info[2]  # cumulative variance
+        
+        # Get eigenvalues from factor_analyzer
+        eigenvalues, _ = fa.get_eigenvalues()
+        
+        print(f"Explained variance by factors: {explained_variance}")
+        print(f"Cumulative explained variance: {cumulative_variance}")
+        
+        # Create scree plot (like your notebook)
+        print("Creating scree plot...")
+        plt.figure(figsize=(10, 6))
+        
+        # Plot eigenvalues with both scatter and line (like your notebook)
+        factor_numbers = range(1, len(eigenvalues) + 1)
+        plt.scatter(factor_numbers, eigenvalues, s=50, alpha=0.7)
+        plt.plot(factor_numbers, eigenvalues, linewidth=2)
+        
+        # Add red dashed line at n_factors
+        plt.axvline(x=n_factors, color='red', linestyle='--', linewidth=2, 
+                   label=f'n_factors = {n_factors}')
+        
+        # Formatting (matching your notebook style)
+        plt.xlabel('Factor', fontsize=12)
+        plt.ylabel('Eigenvalue', fontsize=12)
+        plt.title(plot_title, fontsize=14)
+        plt.grid(True)
+        plt.legend()
+        
+        # Add cumulative variance text
+        cumulative_var_at_nfactors = cumulative_variance[n_factors-1] if n_factors <= len(cumulative_variance) else cumulative_variance[-1]
+        variance_text = f'Cumulative Variance at {n_factors} factors: {cumulative_var_at_nfactors:.3f} ({cumulative_var_at_nfactors*100:.1f}%)'
+        plt.text(0.02, 0.98, variance_text, transform=plt.gca().transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        plt.tight_layout()
+        
+        # Save or show plot
+        if output_path:
+            plot_file = output_path
+        else:
+            # Auto-generate filename
+            plot_file = f"efa_scree_plot_{n_factors}factors.png"
+            
+        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+        print(f"Scree plot saved to: {plot_file}")
+        
+        # Also show plot if output_path was not specified
+        if not output_path:
+            plt.show()
+        
+        # Select best items for each factor
+        print(f"Selecting top {items_per_factor} items per factor...")
+        selected_items = []
+        
+        for factor_idx in range(n_factors):
+            # Get absolute loadings for this factor
+            factor_loadings_abs = np.abs(factor_loadings[:, factor_idx])
+            
+            # Get top items for this factor
+            top_indices = np.argsort(factor_loadings_abs)[::-1][:items_per_factor]
+            
+            for rank, item_idx in enumerate(top_indices):
+                selected_item = {
+                    "factor": factor_idx + 1,
+                    "rank_in_factor": rank + 1,
+                    "item_number": item_numbers[item_idx],
+                    "statement": statements[item_idx],
+                    "original_dimension": dimensions[item_idx],
+                    "factor_loading": factor_loadings[item_idx, factor_idx],
+                    "abs_factor_loading": factor_loadings_abs[item_idx]
+                }
+                selected_items.append(selected_item)
+        
+        # Sort selected items by factor and rank
+        selected_items.sort(key=lambda x: (x["factor"], x["rank_in_factor"]))
+        
+        # Create comprehensive factor loadings Excel file
+        print("Creating factor loadings Excel file...")
+        factor_loadings_file = output_path.replace('.png', '_factor_loadings.xlsx') if output_path and output_path.endswith('.png') else 'factor_loadings_analysis.xlsx'
+        
+        try:
+            with pd.ExcelWriter(factor_loadings_file, engine='openpyxl') as writer:
+                
+                # Sheet 1: Complete Factor Loadings for all items
+                factor_loadings_data = []
+                for i in range(len(statements)):
+                    row = {
+                        "Item_Number": item_numbers[i],
+                        "Statement": statements[i],
+                        "Original_Dimension": dimensions[i]
+                    }
+                    
+                    # Add factor loadings for each factor
+                    for j in range(n_factors):
+                        row[f"Factor_{j+1}_Loading"] = factor_loadings[i, j]
+                        row[f"Factor_{j+1}_Abs_Loading"] = abs(factor_loadings[i, j])
+                    
+                    # Find highest loading factor
+                    max_loading_idx = np.argmax(np.abs(factor_loadings[i, :]))
+                    row["Highest_Loading_Factor"] = max_loading_idx + 1
+                    row["Highest_Loading_Value"] = factor_loadings[i, max_loading_idx]
+                    row["Highest_Abs_Loading"] = abs(factor_loadings[i, max_loading_idx])
+                    
+                    factor_loadings_data.append(row)
+                
+                factor_df = pd.DataFrame(factor_loadings_data)
+                factor_df.to_excel(writer, sheet_name="Factor_Loadings", index=False)
+                
+                # Sheet 2: Selected Items Only
+                selected_df = pd.DataFrame(selected_items)
+                selected_df.to_excel(writer, sheet_name="Selected_Items", index=False)
+                
+                # Sheet 3: Variance Explained
+                variance_data = []
+                for i in range(n_factors):
+                    variance_data.append({
+                        'Factor': i + 1,
+                        'Eigenvalue': eigenvalues[i] if i < len(eigenvalues) else 0,
+                        'Explained_Variance': explained_variance[i] if i < len(explained_variance) else 0,
+                        'Cumulative_Variance': cumulative_variance[i] if i < len(cumulative_variance) else 0,
+                        'Explained_Variance_Percent': explained_variance[i] * 100 if i < len(explained_variance) else 0,
+                        'Cumulative_Variance_Percent': cumulative_variance[i] * 100 if i < len(cumulative_variance) else 0
+                    })
+                
+                variance_df = pd.DataFrame(variance_data)
+                variance_df.to_excel(writer, sheet_name="Variance_Explained", index=False)
+                
+                # Sheet 4: Similarity Matrix (subset for readability)
+                sim_df = pd.DataFrame(similarity_matrix[:min(50, len(similarity_matrix)), :min(50, len(similarity_matrix))])
+                sim_df.index = [f"Item_{i+1}" for i in range(sim_df.shape[0])]
+                sim_df.columns = [f"Item_{i+1}" for i in range(sim_df.shape[1])]
+                sim_df.to_excel(writer, sheet_name="Similarity_Matrix")
+                
+                # Auto-adjust column widths for all sheets
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    for column in worksheet.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = min(max_length + 2, 50)
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            print(f"Factor loadings Excel file created: {factor_loadings_file}")
+            
+        except Exception as e:
+            print(f"Warning: Failed to create Excel file: {str(e)}")
+            factor_loadings_file = None
+        
+        # Print summary
+        print(f"\n" + "="*60)
+        print("EFA ITEM SELECTION RESULTS")
+        print("="*60)
+        print(f"Total items analyzed: {len(statements)}")
+        print(f"Number of factors: {n_factors}")
+        print(f"Items per factor: {items_per_factor}")
+        print(f"Total selected items: {len(selected_items)}")
+        print(f"Cumulative variance explained: {cumulative_variance[-1]:.3f} ({cumulative_variance[-1]*100:.1f}%)")
+        
+        # Print selected items summary
+        print(f"\nSELECTED ITEMS SUMMARY:")
+        current_factor = 0
+        for item in selected_items:
+            if item["factor"] != current_factor:
+                current_factor = item["factor"]
+                print(f"\n--- Factor {current_factor} ---")
+            print(f"  {item['rank_in_factor']}. [{item['item_number']}] Loading: {item['factor_loading']:.3f}")
+            print(f"     {item['statement'][:80]}{'...' if len(item['statement']) > 80 else ''}")
+        
+        # Prepare return dictionary
+        results = {
+            "selected_items": selected_items,
+            "factor_loadings": factor_loadings,
+            "explained_variance": explained_variance,
+            "cumulative_variance": cumulative_variance,
+            "similarity_matrix": similarity_matrix,
+            "embeddings": embeddings,
+            "eigenvalues": eigenvalues,
+            "n_factors": n_factors,
+            "items_per_factor": items_per_factor,
+            "rotation_method": rotation,
+            "factor_loadings_file": factor_loadings_file,
+            "plot_file": plot_file
+        }
+        
+        return results
+        
+    except ImportError as e:
+        raise Exception(f"Required packages not installed. Please install: pip install matplotlib scikit-learn. Error: {str(e)}")
+    except FileNotFoundError as e:
+        raise e
+    except Exception as e:
+        raise Exception(f"Failed to perform EFA item selection: {str(e)}")
+
