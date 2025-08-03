@@ -163,9 +163,9 @@ print(f"Similarity: {similarity:.4f}")
 efa_results = EFA_item_selection(
     items_input=validated_items["top_items"],  # Direct use of top_items format
     model_path="./fine_tuned_model",  # Path to the fine-tuned model
-    n_factors=3,  # Extract 3 factors (Cognitive, Behavioral, Affective)
+    n_factors=3,  # Extract 3 factors
     items_per_factor=5,  # Select top 5 items per factor
-    rotation="oblimin",  # Varimax rotation for clearer factor structure
+    rotation="oblimin",  # Rotation
     random_seed=42
 )
 
