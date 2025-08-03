@@ -18,6 +18,7 @@ pip install auto_scale_development
 
 ### Set API_KE configuration (.env file)
 
+
 ```
 # OpenAI API Key
 OPENAI_API_KEY=
@@ -46,6 +47,12 @@ TOGETHER_API_KEY=
 # meta-llama/Llama-3.3-70B-Instruct-Turbo
 # Qwen/QwQ-32B
 # mistralai/Mistral-7B-Instruct-v0.2
+```
+
+```
+from dotenv import load_dotenv
+
+load_dotenv()
 ```
 
 
@@ -84,7 +91,12 @@ items = item_generation(
     model_name="gpt-4.1-2025-04-14",
     temperature=1.0,
     top_p=0.8
-    api_key=None  # Will use default API key
+    # API keys will be automatically selected based on the model used
+    # You can also specify them explicitly:
+    # openai_api_key=None,  # Will use environment variable
+    # anthropic_api_key=None,
+    # google_api_key=None,
+    # together_api_key=None
 )
 ```
 
@@ -104,7 +116,12 @@ validated_items = content_validation(
     models=["gpt-4.1-2025-04-14", "chatgpt-4o-latest"],
     runs_per_model=2,  # Run each model multiple times for reliability
     top_n_per_dimension=10,  # Select top 10 items per dimension
-    api_key=None  # Will use default API key
+    # API keys will be automatically selected based on the model used
+    # You can also specify them explicitly:
+    # openai_api_key=None,  # Will use environment variable
+    # anthropic_api_key=None,
+    # google_api_key=None,
+    # together_api_key=None
 )
 
 validated_items

@@ -1,4 +1,7 @@
 from auto_scale_development import item_generation, export_items_to_excel, export_items_to_json, item_reduction, content_validation, statement_pair, fine_tune, EFA_item_selection
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # item_generation
 # Define the construct and its dimensions
@@ -28,7 +31,7 @@ examples = {
 }
 
 ## Sample call to item_generation function
-# Generate 5 items per dimension (15 total items)
+# Generate 40 items per dimension (120 total items)
 items = item_generation(
     construct=construct,
     definition=definition,
@@ -38,6 +41,12 @@ items = item_generation(
     model_name="chatgpt-4o-latest",  # Using a faster model for testing
     temperature=1.0,
     top_p=0.8
+    # API keys will be automatically selected based on the model used
+    # You can also specify them explicitly:
+    # openai_api_key=None,  # Will use environment variable
+    # anthropic_api_key=None,
+    # google_api_key=None,
+    # together_api_key=None
 )
 
 print("Generated Items:")
@@ -82,7 +91,12 @@ validated_items = content_validation(
     models=["chatgpt-4o-latest", "gpt-4.1-2025-04-14"], 
     runs_per_model=2,
     top_n_per_dimension=10,
-    api_key=None  # Will use environment variable
+    # API keys will be automatically selected based on the model used
+    # You can also specify them explicitly:
+    # openai_api_key=None,  # Will use environment variable
+    # anthropic_api_key=None,
+    # google_api_key=None,
+    # together_api_key=None
 )
 
 print("Validated Items:")

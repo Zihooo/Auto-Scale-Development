@@ -423,8 +423,10 @@ def _adjust_items_per_dimension(
     model_name: str = "gpt-4.1-2025-04-14",
     temperature: float = 1.0,
     top_p: float = 0.8,
-    api_key: Optional[str] = None
-) -> List[Tuple[str, str]]:
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None) -> List[Tuple[str, str]]:
     """
     Adjust the number of items per dimension to match the target number.
     
@@ -436,7 +438,10 @@ def _adjust_items_per_dimension(
         model_name (str): LLM model name
         temperature (float): Temperature for generation
         top_p (float): Top-p for generation
-        api_key (Optional[str]): API key
+        openai_api_key (Optional[str]): OpenAI API key
+        anthropic_api_key (Optional[str]): Anthropic API key
+        google_api_key (Optional[str]): Google API key
+        together_api_key (Optional[str]): Together API key
     
     Returns:
         List[Tuple[str, str]]: Adjusted list of items
@@ -476,7 +481,17 @@ def _adjust_items_per_dimension(
             
             # Generate additional items for this dimension
             additional_items = _generate_additional_items(
-                dim_name, dim_desc, needed_items, examples, model_name, temperature, top_p, api_key
+                dimension_name=dim_name,
+                dimension_desc=dim_desc, 
+                num_items=needed_items,
+                examples=examples,
+                model_name=model_name,
+                temperature=temperature,
+                top_p=top_p,
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key,
+                google_api_key=google_api_key,
+                together_api_key=together_api_key
             )
             
             for item in additional_items:
@@ -493,7 +508,10 @@ def _generate_additional_items(
     model_name: str = "gpt-4.1-2025-04-14",
     temperature: float = 1.0,
     top_p: float = 0.8,
-    api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None
 ) -> List[str]:
     """
     Generate additional items for a specific dimension.
@@ -506,7 +524,10 @@ def _generate_additional_items(
         model_name (str): LLM model name
         temperature (float): Temperature for generation
         top_p (float): Top-p for generation
-        api_key (Optional[str]): API key
+        openai_api_key (Optional[str]): OpenAI API key
+        anthropic_api_key (Optional[str]): Anthropic API key
+        google_api_key (Optional[str]): Google API key
+        together_api_key (Optional[str]): Together API key
     
     Returns:
         List[str]: List of generated items
@@ -549,7 +570,10 @@ def _generate_additional_items(
             system_prompt=focused_system_prompt,
             temperature=temperature,
             top_p=top_p,
-            api_key=api_key
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            google_api_key=google_api_key,
+            together_api_key=together_api_key
         )
         
         # Parse the response to extract just the statements

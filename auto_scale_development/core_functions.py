@@ -37,7 +37,10 @@ def item_generation(
     model_name: str = "gpt-4.1-2025-04-14",
     temperature: float = 1.0,
     top_p: float = 0.8,
-    api_key: Optional[str] = None) -> Dict[str, Any]:
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None) -> Dict[str, Any]:
     """
     Generate scale items for a given construct using LLM.
     
@@ -50,7 +53,10 @@ def item_generation(
         model_name (str): Name of the LLM model to use. Defaults to "gpt-4.1-2025-04-14"
         temperature (float): Controls randomness (0.0 to 2.0). Defaults to 1.0
         top_p (float): Controls diversity via nucleus sampling (0.0 to 1.0). Defaults to 0.8
-        api_key (Optional[str]): API key to use. If None, will try to get from .env file
+        openai_api_key (Optional[str]): OpenAI API key. If None, will try to get from .env file
+        anthropic_api_key (Optional[str]): Anthropic API key. If None, will try to get from .env file
+        google_api_key (Optional[str]): Google API key. If None, will try to get from .env file
+        together_api_key (Optional[str]): Together API key. If None, will try to get from .env file
     
     Returns:
         Dict[str, Any]: Dictionary containing items and metadata
@@ -140,7 +146,10 @@ def item_generation(
             system_prompt=system_prompt,
             temperature=temperature,
             top_p=top_p,
-            api_key=api_key
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            google_api_key=google_api_key,
+            together_api_key=together_api_key
         )
         
         # Parse the response
@@ -151,7 +160,8 @@ def item_generation(
         
         # Check and adjust the number of items per dimension
         adjusted_items = _adjust_items_per_dimension(
-            parsed_items, dimensions, num_items, examples, model_name, temperature, top_p, api_key
+            parsed_items, dimensions, num_items, examples, model_name, temperature, top_p, 
+            openai_api_key, anthropic_api_key, google_api_key, together_api_key
         )
         
         # Create dictionary structure
@@ -741,7 +751,10 @@ def content_validation(
     models: List[str] = ["gpt-4.1-2025-04-14"],
     runs_per_model: int = 1,
     top_n_per_dimension: int = 10,
-    api_key: Optional[str] = None) -> Dict[str, Any]:
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None) -> Dict[str, Any]:
     """
     Validate content of scale items using multiple models and calculate correspondence/distinctiveness scores.
     
@@ -752,7 +765,10 @@ def content_validation(
         models (List[str]): List of model names to use for validation. Defaults to ["gpt-4.1-2025-04-14"]
         runs_per_model (int): Number of runs per model. Defaults to 1
         top_n_per_dimension (int): Number of top items to select per dimension. Defaults to 10
-        api_key (Optional[str]): API key to use. If None, will try to get from .env file
+        openai_api_key (Optional[str]): OpenAI API key. If None, will try to get from .env file
+        anthropic_api_key (Optional[str]): Anthropic API key. If None, will try to get from .env file
+        google_api_key (Optional[str]): Google API key. If None, will try to get from .env file
+        together_api_key (Optional[str]): Together API key. If None, will try to get from .env file
     
     Returns:
         Dict[str, Any]: Dictionary containing validated items with scores and selected top items
@@ -826,7 +842,10 @@ def content_validation(
                         system_prompt=system_prompt,
                         temperature=0.1,  # Low temperature for consistent ratings
                         top_p=0.9,
-                        api_key=api_key
+                        openai_api_key=openai_api_key,
+                        anthropic_api_key=anthropic_api_key,
+                        google_api_key=google_api_key,
+                        together_api_key=together_api_key
                     )
                     
                     # Parse the ratings
@@ -1627,7 +1646,7 @@ def fine_tune(
         return fine_tuned_model
         
     except ImportError as e:
-        raise Exception(f"Required packages not installed. Please install: pip install sentence-transformers torch. Error: {str(e)}")
+        raise Exception(f"Required packages not installed. Please install: pip install sentence-transformers torch accelerate. Error: {str(e)}")
     except Exception as e:
         raise Exception(f"Failed to fine-tune model: {str(e)}")
 

@@ -114,7 +114,10 @@ def call_llm_api(
     temperature: float = 1.0,
     top_p: float = 0.8,
     max_tokens: Optional[int] = None,
-    api_key: Optional[str] = None) -> str:
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None) -> str:
     """
     Unified wrapper function to call different LLM APIs.
     
@@ -125,7 +128,10 @@ def call_llm_api(
         temperature (float): Controls randomness (0.0 to 2.0). Defaults to 1.0.
         top_p (float): Controls diversity via nucleus sampling (0.0 to 1.0). Defaults to 0.8.
         max_tokens (Optional[int]): Maximum number of tokens to generate. Defaults to None.
-        api_key (Optional[str]): API key to use. If None, will try to get from .env file.
+        openai_api_key (Optional[str]): OpenAI API key. If None, will try to get from .env file.
+        anthropic_api_key (Optional[str]): Anthropic API key. If None, will try to get from .env file.
+        google_api_key (Optional[str]): Google API key. If None, will try to get from .env file.
+        together_api_key (Optional[str]): Together API key. If None, will try to get from .env file.
     
     Returns:
         str: The generated response text
@@ -140,7 +146,8 @@ def call_llm_api(
         ...     system_prompt="You are a helpful assistant.",
         ...     user_prompt="How does a CPU work?",
         ...     temperature=0.7,
-        ...     top_p=0.9
+        ...     top_p=0.9,
+        ...     openai_api_key="your_openai_key"
         ... )
         >>> print(response)
     """
@@ -149,11 +156,21 @@ def call_llm_api(
     if model_config is None:
         raise ValueError(f"Unsupported model: {model_name}")
     
-    # Get API key if not provided
+    # Get API key based on model provider
+    provider = model_config["provider"]
+    api_key = None
+    
+    if provider == "openai":
+        api_key = openai_api_key or get_api_key(model_name)
+    elif provider == "anthropic":
+        api_key = anthropic_api_key or get_api_key(model_name)
+    elif provider == "google":
+        api_key = google_api_key or get_api_key(model_name)
+    elif provider == "together":
+        api_key = together_api_key or get_api_key(model_name)
+    
     if api_key is None:
-        api_key = get_api_key(model_name)
-        if api_key is None:
-            raise ValueError(f"API key not found for model: {model_name}")
+        raise ValueError(f"API key not found for model: {model_name}. Please provide {model_config['api_key_env']} parameter or set it in .env file.")
     
     try:
         provider = model_config["provider"]
