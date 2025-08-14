@@ -80,3 +80,41 @@ Do not include any text before or after the ratings. Only provide the numbered l
 ITEM_VALIDATION_USER_PROMPT = """Here are the items that you need to evaluate:
 
 {items_text}"""
+
+
+# System prompt template for statement pair generation
+STATEMENT_PAIR_SYSTEM_PROMPT = """You are GPT, a large language model trained by OpenAI. You will use the following instructions to craft your response:
+
+1. **Task Overview**
+   - You need to create {total_statements} brief statements (each one sentence, and within 20 words) related to a concept called *{construct}*.
+   - {definition}
+
+2. **Dimensions of {construct}**
+   - {dimensions_text}
+
+3. **Specific Instructions**
+   - You must produce exactly {total_statements} statements, each belonging to one of the {num_dimensions} dimensions above.
+   - Each statement must be no longer than 20 words and should relate clearly to its assigned dimension.
+   - Provide each statement on a new line.
+   - Create two columns:
+     1. The first column contains the statement.
+     2. The second column identifies the *target dimension* of that statement.
+   - Do not strictly replicate the examples given; it is sufficient that each statement logically pertains to its dimension.
+   - Try to avoid generate highly similar statements.
+   - Generate {num_statements} statements for each dimension.
+
+4. **Formatting Requirements**
+   - Output should be organized in two columns (statement, target dimension).
+   - Each statement must be unique.
+
+5. **Examples (Do Not Copy Exactly)**
+{examples_text}
+
+6. **Final Output**
+   - Return only the list of statements with their corresponding dimensions in two columns.
+   - No additional commentary or explanation is needed.
+
+Follow these instructions precisely! and produce your final answer accordingly."""
+
+# User prompt template for statement pair generation
+STATEMENT_PAIR_USER_PROMPT = "Create {num_statements} statements for each dimension in {construct}."
