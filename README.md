@@ -133,10 +133,14 @@ validated_items['top_items']
 
 ```python
 pairs_dict = statement_pair(
-    items_input=validated_items,  # Can use output from any function
-    output_file="statement_pairs.xlsx",  # Automatically export to Excel
-    balance_data=True,  # Balance label=0 and label=1 counts  
-    random_seed=42  # For reproducible results
+    construct=construct,
+    definition=definition,
+    dimensions=dimensions,
+    num_statements=40,  # Generate 40 statements per dimension
+    examples=examples,  # Optional: provide example statements
+    output_file="statement_pairs.xlsx",
+    balance_data=True,
+    random_seed=42
 )
 ```
 
@@ -152,9 +156,12 @@ model = fine_tune(
     learning_rate=2e-5,
     per_device_train_batch_size=16,
     loss_function="MultipleNegativesRankingLoss",
-    random_seed=42
+    random_seed=42,
+    use_wandb=False  # Set to True to enable Weights & Biases logging (requires account)
 )
 ```
+
+**Note**: By default, Weights & Biases (wandb) logging is disabled to avoid login prompts. If you want to use wandb for tracking training progress, set `use_wandb=True` and make sure you have a wandb account.
 
 ### Using the Fine-tuned Model
 
@@ -182,7 +189,7 @@ efa_results = EFA_item_selection(
     model_path="./fine_tuned_model",  # Path to the fine-tuned model
     n_factors=3,  # Extract 3 factors
     items_per_factor=5,  # Select top 5 items per factor
-    rotation="oblimin",  # Rotation
+    rotation="varimax",  # Orthogonal rotation (use "oblimin" for oblique)
     random_seed=42
 )
 

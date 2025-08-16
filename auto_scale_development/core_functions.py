@@ -13,7 +13,9 @@ from .prompts import (
     ITEM_GENERATION_SYSTEM_PROMPT, 
     ITEM_GENERATION_USER_PROMPT,
     ITEM_VALIDATION_SYSTEM_PROMPT,
-    ITEM_VALIDATION_USER_PROMPT
+    ITEM_VALIDATION_USER_PROMPT,
+    STATEMENT_PAIR_SYSTEM_PROMPT,
+    STATEMENT_PAIR_USER_PROMPT
 )
 from .helper_functions import (
     _parse_items_output, 
@@ -1036,24 +1038,43 @@ def get_items(items_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def statement_pair(
-    items_input: Union[Dict[str, Any], str],
+    construct: str,
+    definition: str,
+    dimensions: Dict[str, str],
+    num_statements: int,
+    examples: Optional[Dict[str, list]] = None,
+    model_name: str = "gpt-4.1-2025-04-14",
+    temperature: float = 1.0,
+    top_p: float = 0.8,
     output_file: Optional[str] = None,
     balance_data: bool = True,
-    random_seed: Optional[int] = 42) -> Dict[str, Any]:
+    random_seed: Optional[int] = 42,
+    openai_api_key: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None,
+    together_api_key: Optional[str] = None) -> Dict[str, Any]:
     """
-    Create pairwise combinations of all items with labels for similarity analysis or machine learning.
+    Generate statements using LLM and create pairwise combinations for similarity analysis or machine learning.
     
     Args:
-        items_input (Union[Dict[str, Any], str]): Input data. Can be:
-            - Dictionary containing items data from item_generation, item_reduction, or content_validation, OR
-            - Path to Excel file (.xlsx), OR  
-            - Path to JSON file (.json)
+        construct (str): The name of the construct to generate statements for
+        definition (str): The definition of the construct
+        dimensions (Dict[str, str]): Dictionary mapping dimension names to their descriptions
+        num_statements (int): Number of statements to generate per dimension
+        examples (Optional[Dict[str, list]]): Dictionary mapping dimension names to lists of example statements. Defaults to None
+        model_name (str): Name of the LLM model to use. Defaults to "gpt-4.1-2025-04-14"
+        temperature (float): Controls randomness (0.0 to 2.0). Defaults to 1.0
+        top_p (float): Controls diversity via nucleus sampling (0.0 to 1.0). Defaults to 0.8
         output_file (Optional[str]): Path to output Excel file. If None, no file will be created. Defaults to None
         balance_data (bool): Whether to balance the dataset by sampling label=0 pairs to match label=1 count. Defaults to True
         random_seed (Optional[int]): Random seed for reproducible sampling. Defaults to 42
+        openai_api_key (Optional[str]): OpenAI API key. If None, will try to get from .env file
+        anthropic_api_key (Optional[str]): Anthropic API key. If None, will try to get from .env file
+        google_api_key (Optional[str]): Google API key. If None, will try to get from .env file
+        together_api_key (Optional[str]): Together API key. If None, will try to get from .env file
     
     Returns:
-        Dict[str, Any]: Dictionary containing paired items data with format:
+        Dict[str, Any]: Dictionary containing paired statements data with format:
             {
                 "pairs": [
                     {
@@ -1071,55 +1092,134 @@ def statement_pair(
             }
     
     Raises:
-        ValueError: If items_input is empty or invalid
-        Exception: If pairing process fails
+        ValueError: If required parameters are missing or invalid
+        Exception: If statement generation or pairing process fails
     
     Example:
-        >>> # Using dictionary from item_generation
-        >>> items_dict = item_generation(...)
-        >>> pairs_dict = statement_pair(items_dict, "item_pairs.xlsx")
-        
-        >>> # Using filtered items
-        >>> filtered_dict = item_reduction(...)
-        >>> pairs_dict = statement_pair(filtered_dict, balance_data=True)
-        
-        >>> # Using validated items
-        >>> validated_dict = content_validation(...)
-        >>> pairs_dict = statement_pair(validated_dict, "validated_pairs.xlsx")
-        
+        >>> construct = "Interpersonal Distrust"
+        >>> definition = "An expectation of harmful, hostile, or other negative outcomes..."
+        >>> dimensions = {
+        ...     "Cognitive": "Rational beliefs or expectations...",
+        ...     "Behavioral": "The unwillingness or avoidance...",
+        ...     "Affective": "Negative emotions..."
+        ... }
+        >>> examples = {
+        ...     "Cognitive": ["This person would behave in a deceptive way.", "I am suspicious of this person."],
+        ...     "Behavioral": ["I find it necessary to be cautious.", "I will protect myself."],
+        ...     "Affective": ["I feel tense with this person.", "I experience anxiety."]
+        ... }
+        >>> pairs_dict = statement_pair(
+        ...     construct=construct,
+        ...     definition=definition,
+        ...     dimensions=dimensions,
+        ...     num_statements=40,
+        ...     examples=examples,
+        ...     output_file="statement_pairs.xlsx"
+        ... )
         >>> print(f"Generated {len(pairs_dict['pairs'])} pairs")
         >>> print(f"Same dimension pairs: {pairs_dict['metadata']['same_dimension_pairs']}")
         >>> print(f"Different dimension pairs: {pairs_dict['metadata']['different_dimension_pairs']}")
     """
-    # Handle different input types
-    if isinstance(items_input, str):
-        # Input is a file path
-        if items_input.lower().endswith('.xlsx'):
-            items_dict = _load_items_from_excel(items_input)
-        elif items_input.lower().endswith('.json'):
-            items_dict = _load_items_from_json(items_input)
-        else:
-            raise ValueError("File must be .xlsx or .json format")
-    elif isinstance(items_input, dict):
-        # Input is a dictionary
-        items_dict = items_input
-    else:
-        raise ValueError("items_input must be a dictionary or file path string")
+    # Validate inputs
+    if not construct or not construct.strip():
+        raise ValueError("construct must be a non-empty string")
     
-    if not items_dict or not isinstance(items_dict, dict):
-        raise ValueError("items_dict must be a non-empty dictionary")
+    if not definition or not definition.strip():
+        raise ValueError("definition must be a non-empty string")
+    
+    if not dimensions or not isinstance(dimensions, dict):
+        raise ValueError("dimensions must be a non-empty dictionary")
+    
+    if num_statements <= 0:
+        raise ValueError("num_statements must be a positive integer")
+    
+    # Initialize items list
+    items = []
+    
+    print("Generating statements using LLM...")
+    
+    # Prepare prompt parameters
+    # Format dimensions for prompt
+    dimensions_text = "\n- ".join([f"**{dim}**: {desc}" for dim, desc in dimensions.items()])
+    
+    # Format examples if provided
+    examples_text = ""
+    if examples:
+        example_lines = []
+        for dim, example_list in examples.items():
+            for example in example_list:
+                example_lines.append(f"   - {dim}: \"{example}\"")
+        examples_text = "\n".join(example_lines)
+    else:
+        # Use default examples if not provided
+        examples_text = """   - Cognitive: "This person would behave in a deceptive and fraudulent way.","I am suspicious of the way this person will act in the future.", "This person would use me for his/her own benefits."
+   - Behavioral: "I find it necessary to be cautious with this person.","I will protect myself from being taken advantage of by this person.","I will not count on this person for important things."
+   - Affective: "I feel tense when I am with this person.","I experience anxiety when interacting with this person.","I worry about future interactions with this person." """
+    
+    # Calculate total number of statements
+    total_statements = num_statements * len(dimensions)
+    
+    # Create the system prompt using template
+    system_prompt = STATEMENT_PAIR_SYSTEM_PROMPT.format(
+        total_statements=total_statements,
+        construct=construct,
+        definition=definition,
+        dimensions_text=dimensions_text,
+        num_dimensions=len(dimensions),
+        num_statements=num_statements,
+        examples_text=examples_text
+    )
+    
+    # Create the user prompt using template
+    user_prompt = STATEMENT_PAIR_USER_PROMPT.format(
+        num_statements=num_statements,
+        construct=construct
+    )
+    
+    # Call LLM API
+    llm_output = call_llm_api(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        model_name=model_name,
+        temperature=temperature,
+        top_p=top_p,
+        openai_api_key=openai_api_key,
+        anthropic_api_key=anthropic_api_key,
+        google_api_key=google_api_key,
+        together_api_key=together_api_key
+    )
+    
+    # Parse the LLM output
+    parsed_items = _parse_items_output(llm_output)
+    
+    # Convert parsed items to the format expected by pairing logic
+    for statement, dimension in parsed_items:
+        items.append({
+            "statement": statement,
+            "dimension": dimension
+        })
+    
+    # Create items_dict for compatibility
+    items_dict = {
+        "construct": construct,
+        "definition": definition,
+        "dimensions": dimensions,
+        "items": items
+    }
+    if examples:
+        items_dict["examples"] = examples
+        
+    print(f"Generated {len(items)} statements across {len(dimensions)} dimensions")
+        
+    
+    # Common validation for both modes
+    if not items:
+        raise ValueError("No items found")
+    
+    if len(items) < 2:
+        raise ValueError("At least 2 items are required to create pairs")
     
     try:
-        # Extract items from dictionary using get_items function for consistency
-        items_only = get_items(items_dict)
-        items = items_only["items"]
-        
-        if not items:
-            raise ValueError("No items found in the dictionary")
-        
-        if len(items) < 2:
-            raise ValueError("At least 2 items are required to create pairs")
-        
         # Set random seed for reproducibility
         if random_seed is not None:
             import random
@@ -1371,9 +1471,13 @@ def fine_tune(
     loss_function: str = "MultipleNegativesRankingLoss",
     evaluation_steps: int = 100,
     save_steps: int = 500,
-    random_seed: Optional[int] = 42) -> SentenceTransformer:
+    random_seed: Optional[int] = 42,
+    use_wandb: bool = False) -> SentenceTransformer:
     """
     Fine-tune a sentence transformer model using statement pairs data.
+    
+    Note: By default, Weights & Biases (wandb) logging is disabled to avoid login prompts.
+    Set use_wandb=True if you want to enable wandb logging (requires wandb account).
     
     Args:
         pairs_input (Union[Dict[str, Any], str]): Input data. Can be:
@@ -1391,6 +1495,7 @@ def fine_tune(
         evaluation_steps (int): Steps between evaluations. Defaults to 100
         save_steps (int): Steps between model saves. Defaults to 500
         random_seed (Optional[int]): Random seed for reproducible training. Defaults to 42
+        use_wandb (bool): Whether to enable Weights & Biases logging. Requires wandb account if True. Defaults to False
     
     Returns:
         SentenceTransformer: The fine-tuned model
@@ -1430,6 +1535,7 @@ def fine_tune(
         import torch
         import random
         import numpy as np
+        import os
         
         # Set random seeds for reproducibility
         if random_seed is not None:
@@ -1570,6 +1676,14 @@ def fine_tune(
         print(f"Total training steps: {total_steps}")
         print(f"Warmup steps: {warmup_steps}")
         print(f"Loss function: {loss_function}")
+        
+        # Control wandb logging
+        if not use_wandb:
+            os.environ["WANDB_DISABLED"] = "true"
+            print("Note: Weights & Biases (wandb) logging is disabled. Set use_wandb=True to enable.")
+        else:
+            # If wandb is enabled, remove the disabled flag if it exists
+            os.environ.pop("WANDB_DISABLED", None)
         
         # Train the model
         # Prepare training arguments based on whether we have an evaluator

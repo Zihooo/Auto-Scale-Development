@@ -107,16 +107,20 @@ print(validated_items)
 print("\n" + "=" * 60)
 print("Creating statement pairs...")
 
-# Create statement pairs from validated items
+# Generate statements directly using LLM
 pairs_dict = statement_pair(
-    items_input=validated_items,
-    output_file="statement_pairs.xlsx",  # Automatically export to Excel
-    balance_data=True,  # Balance label=0 and label=1 counts
-    random_seed=42  # For reproducible results
+    construct=construct,
+    definition=definition,
+    dimensions=dimensions,
+    num_statements=40,  # Generate 40 statements per dimension
+    examples=examples,  # Optional: provide example statements
+    output_file="statement_pairs_generated.xlsx",
+    balance_data=True,
+    random_seed=42
 )
 
 
-print("Statement pairs have been exported to 'statement_pairs.xlsx'")
+print("Statement pairs have been exported to 'statement_pairs_generated.xlsx'")
 
 
 # fine_tune
@@ -134,7 +138,8 @@ fine_tuned_model = fine_tune(
     per_device_train_batch_size=16,  # Smaller batch size for testing
     warmup_steps=50,
     loss_function="MultipleNegativesRankingLoss",  # or "CosineSimilarityLoss"
-    random_seed=42
+    random_seed=42,
+    use_wandb=False  # Set to True if you have a wandb account and want logging
 )
 
 print(f"Fine-tuning completed! Model type: {type(fine_tuned_model)}")
@@ -171,7 +176,7 @@ efa_results = EFA_item_selection(
     model_path="./fine_tuned_model",  # Path to the fine-tuned model
     n_factors=3,  # Extract 3 factors (Cognitive, Behavioral, Affective)
     items_per_factor=5,  # Select top 5 items per factor
-    rotation="oblimin",  # Varimax rotation for clearer factor structure
+    rotation="oblimin",  # rotation for clearer factor structure
     random_seed=42
 )
 
